@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>WebSocket Test</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+        <script src="/ws_client.js"></script>
+
+        <style>
+            :root {
+                /* --bg: #111; */
+                --off: #cccccc;
+                --on: #ff3333;
+                --w: 100px;
+                --h: 160px;
+            }
+
+            body {
+                background: var(--bg);
+                display: flex;
+                gap: 40px;
+                padding: 40px;
+            }
+
+            .display {
+                display: flex;
+                gap: 20px;
+            }
+
+            .digit {
+                position: relative;
+                width: var(--w);
+                height: var(--h);
+            }
+
+            .segment {
+                position: absolute;
+                background: var(--off);
+                border-radius: 4px;
+                opacity: 0.35;
+                transition: 0.12s;
+            }
+            .segment.on {
+                background: var(--on);
+                opacity: 1;
+            }
+
+            /* 横線 */
+            .s0 { top: 4%; left: 20%; width: 60%; height: 10px; }
+            .s1 { bottom: 4%; left: 20%; width: 60%; height: 10px; }
+            .s2 { top: 46%; left: 20%; width: 28%; height: 10px; }
+            .s3 { top: 46%; left: 52%; width: 28%; height: 10px; }
+
+            /* 右縦 */
+            .s4 { top: 10%; right: 8%; width: 10px; height: 38%; }
+            .s5 { bottom: 10%; right: 8%; width: 10px; height: 38%; }
+
+            /* 中央 */
+            .s6 { top: 12%; right: 44%; width: 10px; height: 33%; }
+            .s7 { bottom: 12%; right: 44%; width: 10px; height: 33%; }
+
+            /* 左縦 */
+            .s8 { top: 10%; left: 8%; width: 10px; height: 38%; }
+            .s9 { bottom: 10%; left: 8%; width: 10px; height: 38%; }
+
+            /* 斜め */
+            .s10 { top: 10%; left: 25%; width: 10px; height: 32%; transform: rotate(-17deg); }
+            .s11 { top: 10%; right: 25%; width: 10px; height: 32%; transform: rotate(17deg); }
+            .s12 { bottom: 10%; left: 25%; width: 10px; height: 32%; transform: rotate(17deg); }
+            .s13 { bottom: 10%; right: 25%; width: 10px; height: 32%; transform: rotate(-17deg); }
+
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <h1>メッセージ送信</h1>
+
+            <!-- 4桁 LED -->
+            <div class="display" id="display"></div>
+
+            <div class="row my-2">
+                <form onsubmit="event.preventDefault(); updateDisplay(); sendWS();">
+                    <input type="text" id="msg" class="form-control">
+                    <button type="submit" class="mt-2 btn btn-primary">送信</button>
+                </form>
+            </div>
+
+            <div class="row">
+                <% if @message %>
+                    <p>画面に反映: <%= @message %></p>
+                <% end %>
+            </div>
+
+            <div class="row">
+                <h2>別端末からのメッセージ:</h2>
+                <div id="received"></div>
+            </div>
+        </div>
+
+        <script>
+            /* 14 セグメント ID */
+            const SEG = [...Array(14).keys()].map(i => "s" + i);
+
+            /* 点灯パターン */
+            const PAT = {
+                "0":[0,1,4,5,8,9],
+                "1":[4,5,11],
+                "2":[0,1,10,11,5,6,9],
+                "3":[0,1,10,11,5,4,9],
+                "4":[8,7,10,11,1,2],
+                "5":[0,9,10,11,5,4,3],
+                "6":[0,9,10,11,5,4,3,7,8],
+                "7":[0,1,2,3],
+                "8":[0,1,2,3,4,5,6,7,8,9,10,11],
+                "9":[0,1,2,3,4,5,10,11],
+
+                "A":[0,1,2,7,8,9,10,11],
+                "b":[3,4,5,6,7,10,11],
+                "C":[0,9,8,7,6,5],
+                "a":[0,1],
+                " ":[]
+            };
+
+            /* 桁を4つ作る */
+            const disp = document.getElementById("display");
+            for (let i = 0; i < 4; i++) {
+                const digit = document.createElement("div");
+                digit.className = "digit";
+                digit.dataset.index = i;
+
+                SEG.forEach(s => {
+                    const seg = document.createElement("div");
+                    seg.className = "segment " + s;
+                    seg.dataset.seg = s;
+                    digit.appendChild(seg);
+                });
+
+                disp.appendChild(digit);
+            }
+
+            /* 一桁に文字をセット */
+            function setDigit(pos, ch){
+                const digit = disp.querySelector(`.digit[data-index="${pos}"]`);
+                const onList = PAT[ch] || [];
+
+                digit.querySelectorAll(".segment").forEach(seg=>{
+                    const id = Number(seg.dataset.seg.slice(1));
+                    seg.classList.toggle("on", onList.includes(id));
+                });
+            }
+
+            /* テキスト全体を表示（最大4文字） */
+            function setText(str){
+                for (let i=0; i<4; i++){
+                    setDigit(i, str[i] || " ");
+                }
+            }
+
+            /* ボタン押下で表示更新 */
+            function updateDisplay(){
+                const text = document.getElementById("msg").value;
+                setText(text);
+            }
+
+            /* ★ 初期表示は「ページ読込時に一度だけ」 */
+            window.onload = () => {
+                setText("");
+            };
+        </script>
+
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
+    </body>
+</html>
